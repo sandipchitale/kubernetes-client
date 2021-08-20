@@ -23,25 +23,12 @@ import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.Quantity;
 import io.sundr.builder.internal.functions.TypeAs;
 import io.sundr.codegen.functions.ClassTo;
-import io.sundr.model.AnnotationRef;
-import io.sundr.model.ClassRef;
-import io.sundr.model.Method;
-import io.sundr.model.PrimitiveRefBuilder;
-import io.sundr.model.Property;
-import io.sundr.model.TypeDef;
-import io.sundr.model.TypeRef;
+import io.sundr.model.*;
 import io.sundr.utils.Strings;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.*;
 
 /**
  * Encapsulates the common logic supporting OpenAPI schema generation for CRD generation.
@@ -141,14 +128,14 @@ public abstract class AbstractJsonSchema<T, B> {
         LOGGER.debug("Ignoring property {}", name);
         continue;
       }
-      
+
       property.getAnnotations().forEach(a -> {
-        switch(a.getClassRef().getFullyQualifiedName()) {
+        switch (a.getClassRef().getFullyQualifiedName()) {
           case "javax.validation.constraints.NotNull":
             required.add(name);
             break;
           case ANNOTATION_JSON_PROPERTY:
-            updatePropertyFromAnnotationIfNeeded(property, name, updated, a);
+            updatePropertyFromAnnotationIfNeeded(property, updated, a);
             break;
         }
       });
@@ -158,12 +145,7 @@ public abstract class AbstractJsonSchema<T, B> {
         // check if accessors are annotated with JsonProperty with a different name
         methods.stream()
           .filter(m -> m.getName().matches("(is|get|set)" + property.getNameCapitalized()))
-          .forEach(m -> m.getAnnotations().stream()
-            // check if accessor is annotated with JsonProperty
-            .filter(a -> a.getClassRef().getFullyQualifiedName().equals(ANNOTATION_JSON_PROPERTY))
-            .findAny()
-            // if we found an annotated accessor, override the property's name if needed
-            .ifPresent(a -> updatePropertyFromAnnotationIfNeeded(property, name, updated, a))
+          .forEach(m -> extractUpdatedNameFromJacksonPropertyIfPresent(property, updated, m.getAnnotations())
           );
       } else {
         LOGGER.debug("Property {} has already been renamed to {} by field annotation", name, updated[0].getName());
@@ -176,14 +158,39 @@ public abstract class AbstractJsonSchema<T, B> {
     return build(builder, required);
   }
 
-  private void updatePropertyFromAnnotationIfNeeded(Property property, String name, Property[] updated,
-    AnnotationRef a) {
+  /**
+   * Retrieves the updated property name for the specified property if its annotations warrant it, creating an updated Property put in the specified holder if said holder is not {@code null}.
+   * @param property the Property which name might need to be updated
+   * @param updatedPropertyHolder an optional array holding a single Property where the modified property will be put
+   * @param annotations a collection of AnnotationRef to consider (note that this method can be called on accessors of the specified property so this collection is <strong>not</strong> necessarily the property's annotation, but could also be the accessor's annotations)
+   * @return the updated property name or its original one if it didn't need to be changed
+   */
+  private String extractUpdatedNameFromJacksonPropertyIfPresent(Property property, Property[] updatedPropertyHolder, Collection<AnnotationRef> annotations) {
+    return annotations.stream()
+      // only consider JsonProperty annotation
+      .filter(a -> a.getClassRef().getFullyQualifiedName().equals(ANNOTATION_JSON_PROPERTY))
+      .findAny()
+      // if we found an annotated accessor, override the property's name if needed
+      .map(a -> updatePropertyFromAnnotationIfNeeded(property, updatedPropertyHolder, a))
+      .orElse(property.getName());
+  }
+
+  /**
+   * Update the specified property with the value extracted from the specified AnnotationRef, putting the updated property in the specified holder array (so that we can have an effectively final object to modify in lambdas) if the holder array is not {@code null} and returning the updated property name.
+   * @param property the Property which name might need to be updated
+   * @param updated an optional array holding a single Property where the modified property will be put
+   * @param a the AnnotationRef specifying the updated property name
+   * @return the updated property name from the annotation
+   */
+  private String updatePropertyFromAnnotationIfNeeded(Property property, Property[] updated,
+                                                      AnnotationRef a) {
     final String fromAnnotation = (String) a.getParameters().get("value");
-    if (!Strings.isNullOrEmpty(fromAnnotation) && !name.equals(fromAnnotation)) {
+    if (updated != null && !Strings.isNullOrEmpty(fromAnnotation) && !property.getName().equals(fromAnnotation)) {
       updated[0] = new Property(property.getAnnotations(), property.getTypeRef(), fromAnnotation,
         property.getComments(),
         property.getModifiers(), property.getAttributes());
     }
+    return fromAnnotation;
   }
 
   /**
@@ -253,7 +260,7 @@ public abstract class AbstractJsonSchema<T, B> {
       return internalFrom(name, TypeAs.UNWRAP_OPTIONAL_OF.apply(typeRef));
     } else {
       final String typeName = COMMON_MAPPINGS.get(typeRef);
-      if(typeName != null) { // we have a type that we handle specifically
+      if (typeName != null) { // we have a type that we handle specifically
         if (INT_OR_STRING_MARKER.equals(typeName)) { // Handle int or string mapped types
           return mappedProperty(typeRef);
         } else {
@@ -265,9 +272,9 @@ public abstract class AbstractJsonSchema<T, B> {
           TypeDef def = Types.typeDefFrom(classRef);
 
           // check if we're dealing with an enum
-          if(def.isEnum()) {
+          if (def.isEnum()) {
             final JsonNode[] enumValues = def.getProperties().stream()
-              .map(Property::getName)
+              .map(p -> extractUpdatedNameFromJacksonPropertyIfPresent(p, null, p.getAnnotations()))
               .filter(n -> !n.startsWith("$"))
               .map(JsonNodeFactory.instance::textNode)
               .toArray(JsonNode[]::new);

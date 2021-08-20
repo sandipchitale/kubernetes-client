@@ -24,6 +24,7 @@ public class AnnotatedSpec {
   @JsonProperty
   private String unnamed;
   private boolean emptySetter;
+  private AnnotatedEnum anEnum;
 
   @JsonProperty("from-getter")
   public int getFoo() {
@@ -34,4 +35,8 @@ public class AnnotatedSpec {
   public void setEmptySetter(boolean emptySetter) {
     this.emptySetter = emptySetter;
   }
+
+  public enum AnnotatedEnum {
+    non, @JsonProperty("oui") Yes
+  } 
 }

@@ -15,10 +15,6 @@
  */
 package io.fabric8.crd.generator.v1;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import io.fabric8.crd.example.annotated.Annotated;
 import io.fabric8.crd.example.basic.Basic;
@@ -26,10 +22,13 @@ import io.fabric8.crd.example.person.Person;
 import io.fabric8.crd.generator.utils.Types;
 import io.fabric8.kubernetes.api.model.apiextensions.v1.JSONSchemaProps;
 import io.sundr.model.TypeDef;
+import org.junit.jupiter.api.Test;
+
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 class JsonSchemaTest {
 
@@ -75,11 +74,18 @@ class JsonSchemaTest {
     Map<String, JSONSchemaProps> properties = schema.getProperties();
     assertEquals(2, properties.size());
     Map<String, JSONSchemaProps> spec = properties.get("spec").getProperties();
-    assertEquals(4, spec.size());
+    assertEquals(5, spec.size());
     assertTrue(spec.containsKey("from-field"));
     assertTrue(spec.containsKey("from-getter"));
     assertTrue(spec.containsKey("unnamed"));
     assertTrue(spec.containsKey("emptySetter"));
+    assertTrue(spec.containsKey("anEnum"));
+
+    // check the enum values
+    final JSONSchemaProps anEnum = spec.get("anEnum");
+    final List<JsonNode> enumValues = anEnum.getEnum();
+    assertEquals(2, enumValues.size());
+    enumValues.stream().map(JsonNode::textValue).forEach(s -> assertTrue("oui".equals(s) || "non".equals(s)));
   }
 
 }

@@ -3,6 +3,7 @@
 ### 5.8-SNAPSHOT
 
 #### Bugs
+* Fix #3411: enum values should honor JsonProperty annotations during CRD generation
 
 #### Improvements
 
